@@ -157,7 +157,7 @@ Feel free to fork and enhance! Some ideas:
 - Create theme system (amber, white-on-blue)
 - Add BBS door games
 
-## 📜 License
+## ![📜 License](https://github.com/TheshanBMR/RetroShell?tab=MIT-1-ov-file)
 
 MIT License - feel free to use in personal and commercial projects.
 
