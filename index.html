@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RetroShell - Vintage Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes flicker {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+        @keyframes scanline {
+            0% { top: 0%; }
+            100% { top: 100%; }
+        }
+        .flicker {
+            animation: flicker 5s infinite;
+        }
+        .blink {
+            animation: blink 1s infinite;
+        }
+        .scanline {
+            position: absolute;
+            height: 2px;
+            background: rgba(0, 255, 0, 0.1);
+            width: 100%;
+            animation: scanline 10s linear infinite;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .matrix-rain {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 20;
+            display: none;
+        }
+        .terminal-content {
+            font-family: 'Courier New', monospace;
+        }
+        .glow {
+            text-shadow: 0 0 5px rgba(0, 255, 0, 0.7);
+        }
+    </style>
+</head>
+<body class="bg-black text-green-400 overflow-hidden h-screen flex flex-col">
+    <!-- Scanline Effect -->
+    <div class="scanline"></div>
+    
+    <!-- Matrix Rain Canvas -->
+    <canvas id="matrixCanvas" class="matrix-rain"></canvas>
+    
+    <!-- Terminal Header -->
+    <div class="p-4 border-b border-green-800 flex justify-between items-center">
+        <div class="text-xl glow">RetroShell v2.0</div>
+        <div class="text-sm">Connected to: GHOST-NET</div>
+    </div>
+    
+    <!-- Terminal Output Area -->
+    <div id="output" class="terminal-content flex-grow p-4 overflow-y-auto flicker"></div>
+    
+    <!-- Terminal Input Area -->
+    <div class="p-4 border-t border-green-800 flex items-center">
+        <span class="mr-2 glow">user@retro:~$</span>
+        <input type="text" id="commandInput" class="bg-transparent outline-none flex-grow text-green-400" autofocus>
+    </div>
+    
+    <!-- Footer with Uptime -->
+    <div class="p-2 text-xs text-center border-t border-green-800 flex justify-between">
+        <div>RetroShell v2.0 | 1995 Mode</div>
+        <div id="uptimeCounter">UPTIME: 00:00:00</div>
+        <div>System: ONLINE</div>
+    </div>
+
+    <script>
+        // Fake file system
+        const fileSystem = {
+            'index.html': '<!DOCTYPE html>\n<html>\n<head>\n<title>Retro Homepage</title>\n</head>\n<body>\n<h1>Welcome to the Retro Web</h1>\n<p>This is a vintage HTML page from the 90s.</p>\n</body>\n</html>',
+            'about.txt': 'RetroShell v2.0\nCreated by Anonymous User\nSystem: GHOST-NET Terminal\nStatus: Connected\nLast Update: 10/27/1995',
+            'oldpage.html': '<html>\n<body bgcolor="black" text="lime">\n<center>\n<h1>UNDER CONSTRUCTION</h1>\n<img src="construction.gif" alt="Under Construction">\n<p>This page is currently under construction.</p>\n<p>Please check back later!</p>\n</center>\n</body>\n</html>',
+            'archive': {
+                'ancient.txt': 'This file is from the ancient times of the internet.\nIt contains secrets lost to time...\nOr maybe just some random text.\nEither way, it feels nostalgic.',
+                'logfile.txt': '1995-10-27: System booted\n1995-10-27: User logged in\n1995-10-27: Connection established to GHOST-NET\n1995-10-27: Matrix protocol initialized'
+            }
+        };
+
+        // Fortune quotes
+        const fortunes = [
+            "The web is not just a technology, it's a culture.",
+            "You have mail!",
+            "System overload. Please wait...",
+            "The matrix has you.",
+            "There is no spoon.",
+            "All your base are belong to us.",
+            "The truth is out there.",
+            "404: Sense of humor not found.",
+            "I think, therefore I am online.",
+            "Resistance is futile."
+        ];
+
+        // Command history
+        let commandHistory = [];
+        let historyIndex = -1;
+        let startTime = Date.now();
+        let matrixActive = false;
+        let matrixInterval;
+
+        // Initialize terminal
+        document.addEventListener('DOMContentLoaded', function() {
+            const output = document.getElementById('output');
+            const commandInput = document.getElementById('commandInput');
+            const uptimeCounter = document.getElementById('uptimeCounter');
+            
+            // Welcome message
+            output.innerHTML = `
+                <div class="mb-2">RetroShell v2.0 - Enhanced Terminal</div>
+                <div class="mb-2">Initializing system... OK</div>
+                <div class="mb-2">Loading protocols... OK</div>
+                <div class="mb-2">Connecting to GHOST-NET... OK</div>
+                <div class="mb-4">System ready. Type 'help' for available commands.</div>
+                <div class="mb-4 text-yellow-300">Welcome to the next-level retro experience!</div>
+            `;
+            
+            // Focus on input
+            commandInput.focus();
+            
+            // Update uptime every second
+            setInterval(() => {
+                const uptime = Math.floor((Date.now() - startTime) / 1000);
+                const hours = Math.floor(uptime / 3600);
+                const minutes = Math.floor((uptime % 3600) / 60);
+                const seconds = uptime % 60;
+                uptimeCounter.textContent = `UPTIME: ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }, 1000);
+            
+            // Command input handler
+            commandInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    const command = commandInput.value.trim();
+                    if (command) {
+                        commandHistory.push(command);
+                        historyIndex = commandHistory.length;
+                        processCommand(command);
+                        commandInput.value = '';
+                    }
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (commandHistory.length > 0) {
+                        if (historyIndex > 0) historyIndex--;
+                        commandInput.value = commandHistory[historyIndex] || '';
+                    }
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (historyIndex < commandHistory.length - 1) {
+                        historyIndex++;
+                        commandInput.value = commandHistory[historyIndex] || '';
+                    } else {
+                        historyIndex = commandHistory.length;
+                        commandInput.value = '';
+                    }
+                } else if (e.key === 'Tab') {
+                    e.preventDefault();
+                    autoComplete(commandInput);
+                } else if (e.ctrlKey && e.key === 'c') {
+                    if (matrixActive) {
+                        stopMatrix();
+                        addOutput("Matrix rain stopped.");
+                    }
+                }
+            });
+            
+            // Click anywhere to focus input
+            document.addEventListener('click', function() {
+                commandInput.focus();
+            });
+        });
+
+        // Process commands
+        function processCommand(command) {
+            const output = document.getElementById('output');
+            const args = command.split(' ');
+            const cmd = args[0].toLowerCase();
+            
+            addOutput(`<span class="text-green-300">user@retro:~$ ${command}</span>`);
+            
+            switch(cmd) {
+                case 'help':
+                    addOutput(`
+                        <div>Available commands:</div>
+                        <div class="ml-4">help - Show this help message</div>
+                        <div class="ml-4">ls - List files</div>
+                        <div class="ml-4">cat &lt;file&gt; - Show file content</div>
+                        <div class="ml-4">open &lt;file&gt; - Render HTML content</div>
+                        <div class="ml-4">grep &lt;word&gt; - Search for word in files</div>
+                        <div class="ml-4">date - Show current date and time</div>
+                        <div class="ml-4">uptime - Show system uptime</div>
+                        <div class="ml-4">whois &lt;site&gt; - Fake domain lookup</div>
+                        <div class="ml-4">telnet &lt;site&gt; - Fake connection simulation</div>
+                        <div class="ml-4">matrix - Start Matrix rain animation</div>
+                        <div class="ml-4">fortune - Show random quote</div>
+                        <div class="ml-4">clear - Clear screen</div>
+                        <div class="ml-4">history - Show command history</div>
+                        <div class="ml-4">hack - Easter egg animation</div>
+                    `);
+                    break;
+                    
+                case 'ls':
+                    listFiles();
+                    break;
+                    
+                case 'cat':
+                    if (args.length < 2) {
+                        addOutput("Usage: cat &lt;filename&gt;");
+                    } else {
+                        catFile(args[1]);
+                    }
+                    break;
+                    
+                case 'open':
+                    if (args.length < 2) {
+                        addOutput("Usage: open &lt;filename&gt;");
+                    } else {
+                        openFile(args[1]);
+                    }
+                    break;
+                    
+                case 'grep':
+                    if (args.length < 2) {
+                        addOutput("Usage: grep &lt;search term&gt;");
+                    } else {
+                        grepFiles(args[1]);
+                    }
+                    break;
+                    
+                case 'date':
+                    addOutput(new Date().toString());
+                    break;
+                    
+                case 'uptime':
+                    const uptime = Math.floor((Date.now() - startTime) / 1000);
+                    const hours = Math.floor(uptime / 3600);
+                    const minutes = Math.floor((uptime % 3600) / 60);
+                    const seconds = uptime % 60;
+                    addOutput(`System uptime: ${hours}h ${minutes}m ${seconds}s`);
+                    break;
+                    
+                case 'whois':
+                    if (args.length < 2) {
+                        addOutput("Usage: whois &lt;domain&gt;");
+                    } else {
+                        whoisLookup(args[1]);
+                    }
+                    break;
+                    
+                case 'telnet':
+                    if (args.length < 2) {
+                        addOutput("Usage: telnet &lt;host&gt;");
+                    } else {
+                        telnetConnect(args[1]);
+                    }
+                    break;
+                    
+                case 'matrix':
+                    startMatrix();
+                    break;
+                    
+                case 'fortune':
+                    const randomIndex = Math.floor(Math.random() * fortunes.length);
+                    addOutput(fortunes[randomIndex]);
+                    break;
+                    
+                case 'clear':
+                    output.innerHTML = '';
+                    break;
+                    
+                case 'history':
+                    if (commandHistory.length === 0) {
+                        addOutput("No command history.");
+                    } else {
+                        let historyOutput = "Command history:\n";
+                        commandHistory.forEach((cmd, index) => {
+                            historyOutput += `${index + 1}. ${cmd}\n`;
+                        });
+                        addOutput(historyOutput);
+                    }
+                    break;
+                    
+                case 'hack':
+                    hackAnimation();
+                    break;
+                    
+                default:
+                    addOutput(`Command not found: ${cmd}. Type 'help' for available commands.`);
+            }
+            
+            // Scroll to bottom
+            output.scrollTop = output.scrollHeight;
+        }
+
+        // Add output to terminal
+        function addOutput(text) {
+            const output = document.getElementById('output');
+            output.innerHTML += `<div class="mb-1">${text}</div>`;
+        }
+
+        // List files
+        function listFiles() {
+            let output = "Files and directories:\n";
+            for (const item in fileSystem) {
+                if (typeof fileSystem[item] === 'string') {
+                    output += `- ${item}\n`;
+                } else {
+                    output += `- ${item}/ (directory)\n`;
+                }
+            }
+            addOutput(output);
+        }
+
+        // Show file content
+        function catFile(filename) {
+            if (fileSystem[filename]) {
+                addOutput(fileSystem[filename]);
+            } else if (fileSystem.archive && fileSystem.archive[filename]) {
+                addOutput(fileSystem.archive[filename]);
+            } else {
+                addOutput(`File not found: ${filename}`);
+            }
+        }
+
+        // Open HTML file
+        function openFile(filename) {
+            if (filename.endsWith('.html') && fileSystem[filename]) {
+                const content = fileSystem[filename];
+                // Create a temporary div to render HTML
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = content;
+                
+                // Style it to look like a browser window
+                tempDiv.className = 'border border-green-700 p-4 my-2 bg-gray-900 text-white';
+                document.getElementById('output').appendChild(tempDiv);
+            } else {
+                addOutput(`Cannot open: ${filename}. Only HTML files supported.`);
+            }
+        }
+
+        // Search in files
+        function grepFiles(searchTerm) {
+            let results = [];
+            
+            // Search in root files
+            for (const file in fileSystem) {
+                if (typeof fileSystem[file] === 'string') {
+                    const content = fileSystem[file];
+                    if (content.toLowerCase().includes(searchTerm.toLowerCase())) {
+                        results.push(`Found in ${file}`);
+                    }
+                }
+            }
+            
+            // Search in archive
+            if (fileSystem.archive) {
+                for (const file in fileSystem.archive) {
+                    const content = fileSystem.archive[file];
+                    if (content.toLowerCase().includes(searchTerm.toLowerCase())) {
+                        results.push(`Found in archive/${file}`);
+                    }
+                }
+            }
+            
+            if (results.length > 0) {
+                addOutput(`Search results for "${searchTerm}":\n${results.join('\n')}`);
+            } else {
+                addOutput(`No matches found for "${searchTerm}"`);
+            }
+        }
+
+        // Fake whois lookup
+        function whoisLookup(domain) {
+            const domains = {
+                'google.com': 'Domain: google.com\nRegistrar: DNStination Inc.\nCreated: 1997-09-15\nExpires: 2025-09-14\nStatus: Active',
+                'example.com': 'Domain: example.com\nRegistrar: Example Registry\nCreated: 1995-01-01\nExpires: 2030-01-01\nStatus: Reserved',
+                'retroshell.net': 'Domain: retroshell.net\nRegistrar: Vintage Hosting\nCreated: 1995-10-27\nExpires: 2024-10-27\nStatus: Active'
+            };
+            
+            if (domains[domain]) {
+                addOutput(domains[domain]);
+            } else {
+                addOutput(`No WHOIS data found for ${domain}`);
+            }
+        }
+
+        // Fake telnet connection
+        function telnetConnect(host) {
+            addOutput(`Connecting to ${host}...`);
+            
+            let dots = 0;
+            const interval = setInterval(() => {
+                addOutput('.');
+                dots++;
+                
+                if (dots === 3) {
+                    clearInterval(interval);
+                    addOutput(`Connected to ${host}\nWelcome to ${host} terminal\nType 'exit' to disconnect`);
+                }
+            }, 500);
+        }
+
+        // Matrix rain animation
+        function startMatrix() {
+            matrixActive = true;
+            const canvas = document.getElementById('matrixCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            canvas.style.display = 'block';
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            
+            const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$#@%&*";
+            const fontSize = 14;
+            const columns = canvas.width / fontSize;
+            
+            const drops = [];
+            for (let i = 0; i < columns; i++) {
+                drops[i] = 1;
+            }
+            
+            function draw() {
+                if (!matrixActive) return;
+                
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.fillStyle = '#0F0';
+                ctx.font = `${fontSize}px monospace`;
+                
+                for (let i = 0; i < drops.length; i++) {
+                    const text = chars[Math.floor(Math.random() * chars.length)];
+                    ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                    
+                    if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                        drops[i] = 0;
+                    }
+                    
+                    drops[i]++;
+                }
+                
+                requestAnimationFrame(draw);
+            }
+            
+            draw();
+            addOutput("Matrix rain started. Press Ctrl+C to stop.");
+        }
+
+        function stopMatrix() {
+            matrixActive = false;
+            document.getElementById('matrixCanvas').style.display = 'none';
+        }
+
+        // Hack animation easter egg
+        function hackAnimation() {
+            addOutput("Initializing hack protocol...");
+            
+            const messages = [
+                "Bypassing firewall...",
+                "Accessing mainframe...",
+                "Decrypting security layer...",
+                "Injecting payload...",
+                "Establishing backdoor...",
+                "Hack complete! System compromised."
+            ];
+            
+            let index = 0;
+            const interval = setInterval(() => {
+                if (index < messages.length) {
+                    addOutput(messages[index]);
+                    index++;
+                } else {
+                    clearInterval(interval);
+                    addOutput("<span class='text-red-400'>ACCESS GRANTED: You now have full control.</span>");
+                }
+            }, 1000);
+        }
+
+        // Tab autocomplete
+        function autoComplete(input) {
+            const currentValue = input.value;
+            const commands = ['help', 'ls', 'cat', 'open', 'grep', 'date', 'uptime', 'whois', 'telnet', 'matrix', 'fortune', 'clear', 'history', 'hack'];
+            const files = Object.keys(fileSystem).filter(key => typeof fileSystem[key] === 'string');
+            
+            // Find matches
+            const matches = [...commands, ...files].filter(item => 
+                item.startsWith(currentValue)
+            );
+            
+            if (matches.length === 1) {
+                input.value = matches[0];
+            } else if (matches.length > 1) {
+                addOutput(`Possible completions: ${matches.join(', ')}`);
+            }
+        }
+    </script>
+</body>
+</html>
